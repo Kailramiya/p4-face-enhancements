@@ -17,8 +17,8 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------------
-RAW_FACES_DIR    = Path("raw_faces")
-REFERENCE_DIR    = Path("reference_identities")
+RAW_FACES_DIR    = Path("Video_1")
+REFERENCE_DIR    = Path("Profiles_1")
 ENHANCED_DIR     = Path("enhanced_faces")
 REPORT_HTML_OUT  = Path("enhancement_report.html")
 METRICS_JSON_OUT = Path("evaluation_metrics.json")
@@ -381,7 +381,7 @@ if __name__ == "__main__":
 
     print(f"Loaded {len(reference_encodings)} reference identities")
 
-    face_paths = sorted(RAW_FACES_DIR.glob("*.jpg")) + sorted(RAW_FACES_DIR.glob("*.png"))
+    face_paths = sorted(RAW_FACES_DIR.glob("*.jpg")) + sorted(RAW_FACES_DIR.glob("*.jpeg")) + sorted(RAW_FACES_DIR.glob("*.png"))
     print(f"Processing {len(face_paths)} face crops ...")
 
     results = []
