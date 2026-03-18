@@ -36,7 +36,7 @@ SHARP_SKIP_THRESHOLD = 80.0
 
 def stage1_denoise(img: np.ndarray) -> np.ndarray:
     """
-    cv2.fastNlMeansDenoisingColored — adaptive h based on image sharpness.
+    cv2.fastNlMeansDenoisingColored — adaptive h based on image size.
     Tiny noisy crops (< 64px) get full h=8.
     Larger/sharper crops get lighter denoising to preserve detail.
     """
@@ -89,20 +89,16 @@ def unsharp_mask(img: np.ndarray, sigma: float, strength: float) -> np.ndarray:
 def stage3_upscale(img: np.ndarray) -> np.ndarray:
     """
     If short side < 64px: 2x LANCZOS4 -> unsharp(1.0, 1.6) -> 2x LANCZOS4 -> resize to TARGET_SIZE.
-    Otherwise: direct resize to TARGET_SIZE LANCZOS4 + unsharp to recover lost detail.
+    Otherwise: direct resize to TARGET_SIZE LANCZOS4.
     """
     h, w = img.shape[:2]
     short_side = min(h, w)
 
     if short_side < 64:
-        # First 2x upscale
         img = cv2.resize(img, (w * 2, h * 2), interpolation=cv2.INTER_LANCZOS4)
-        # Unsharp mask
         img = unsharp_mask(img, sigma=1.0, strength=1.6)
-        # Second 2x upscale
         h2, w2 = img.shape[:2]
         img = cv2.resize(img, (w2 * 2, h2 * 2), interpolation=cv2.INTER_LANCZOS4)
-        # Final resize to target
         img = cv2.resize(img, TARGET_SIZE, interpolation=cv2.INTER_LANCZOS4)
     else:
         img = cv2.resize(img, TARGET_SIZE, interpolation=cv2.INTER_LANCZOS4)
@@ -191,6 +187,22 @@ def enhance_face(img: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
+# REFERENCE PREPROCESSING (domain alignment)
+# ---------------------------------------------------------------------------
+
+def prepare_reference_enhanced(img: np.ndarray) -> np.ndarray:
+    """
+    Process reference image through CLAHE + resize + zone sharpen to align
+    its encoding domain with enhanced CCTV crops.
+    Skip denoise (references are clean) and upscale (already high-res).
+    """
+    img = stage2_clahe(img)
+    img = cv2.resize(img, TARGET_SIZE, interpolation=cv2.INTER_LANCZOS4)
+    img = stage4_zone_sharpen(img)
+    return img
+
+
+# ---------------------------------------------------------------------------
 # EVALUATION HELPERS
 # ---------------------------------------------------------------------------
 
@@ -203,21 +215,10 @@ def sharpness(img: np.ndarray) -> float:
 def get_face_encoding(img: np.ndarray, upsample: int = 1):
     """
     128-d face encoding. Return numpy array if face found, else None.
-    First tries treating the whole crop as a face (faster, works for face crops).
-    Falls back to face detection if that fails.
+    Uses face_recognition's built-in face detection for proper alignment.
     """
     import face_recognition as fr
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    h, w = rgb.shape[:2]
-
-    # These are known face crops — encode the whole image as a face
-    # (top, right, bottom, left) format for face_recognition
-    full_face_loc = [(0, w, h, 0)]
-    encodings = fr.face_encodings(rgb, known_face_locations=full_face_loc)
-    if encodings:
-        return encodings[0]
-
-    # Fallback: auto-detect face location
     locations = fr.face_locations(rgb, number_of_times_to_upsample=upsample)
     if not locations:
         return None
@@ -374,25 +375,45 @@ if __name__ == "__main__":
 
     t_start = time.time()
 
-    # Load reference encodings for evaluation
-    reference_encodings = {}
+    # ---- Load DUAL reference encodings (domain-aligned) ----
+    # Raw refs: for matching against raw crops (before enhancement)
+    # Enhanced refs: for matching against enhanced crops (after enhancement)
+    raw_ref_encodings = {}
+    enh_ref_encodings = {}
+
+    print("Loading reference identities (raw + enhanced domain)...")
     for ref in sorted(REFERENCE_DIR.glob("*")):
         if ref.suffix.lower() not in [".jpg", ".jpeg", ".png"]:
             continue
         img = cv2.imread(str(ref))
         if img is None:
             continue
-        enc = get_face_encoding(img)
-        if enc is not None:
-            reference_encodings[ref.stem] = enc
-            print(f"  Reference: {ref.stem}")
-        else:
-            print(f"  WARNING: no face in {ref.name}")
 
-    print(f"Loaded {len(reference_encodings)} reference identities")
+        # Raw reference: just resize to 240x240
+        raw_ref = cv2.resize(img, TARGET_SIZE, interpolation=cv2.INTER_LANCZOS4)
+        enc_raw = get_face_encoding(raw_ref)
+        if enc_raw is not None:
+            raw_ref_encodings[ref.stem] = enc_raw
 
-    refs_list  = list(reference_encodings.values())
-    refs_names = list(reference_encodings.keys())
+        # Enhanced reference: CLAHE + resize + zone sharpen (same domain as enhanced crops)
+        enh_ref = prepare_reference_enhanced(img)
+        enc_enh = get_face_encoding(enh_ref)
+        if enc_enh is not None:
+            enh_ref_encodings[ref.stem] = enc_enh
+
+        status = []
+        if ref.stem in raw_ref_encodings:
+            status.append("raw")
+        if ref.stem in enh_ref_encodings:
+            status.append("enh")
+        print(f"  Reference: {ref.stem} [{', '.join(status)}]")
+
+    print(f"Loaded {len(raw_ref_encodings)} raw + {len(enh_ref_encodings)} enhanced reference encodings")
+
+    raw_refs_list  = list(raw_ref_encodings.values())
+    raw_refs_names = list(raw_ref_encodings.keys())
+    enh_refs_list  = list(enh_ref_encodings.values())
+    enh_refs_names = list(enh_ref_encodings.keys())
 
     face_paths = sorted(RAW_FACES_DIR.glob("*.jpg")) + sorted(RAW_FACES_DIR.glob("*.jpeg")) + sorted(RAW_FACES_DIR.glob("*.png"))
     print(f"Processing {len(face_paths)} face crops ...")
@@ -406,7 +427,6 @@ if __name__ == "__main__":
         if raw is None:
             continue
 
-        # Resize raw to 240x240 for fair sharpness comparison
         raw_resized = cv2.resize(raw, TARGET_SIZE, interpolation=cv2.INTER_LANCZOS4)
 
         # BONUS: skip enhancement if already sharp at target size
@@ -424,7 +444,7 @@ if __name__ == "__main__":
     t_enhance = round(time.time() - t_enhance_start, 2)
     print(f"  Enhancement done in {t_enhance}s")
 
-    # --- Phase 2: Evaluate (face_recognition is slow, but necessary) ---
+    # --- Phase 2: Evaluate with domain-aligned matching ---
     results = []
 
     for fp in face_paths:
@@ -433,13 +453,13 @@ if __name__ == "__main__":
 
         raw, enhanced = enhanced_images[fp.name]
 
-        # Measure sharpness at SAME resolution (240x240) for fair comparison
+        # Sharpness at same resolution (240x240)
         raw_at_target = cv2.resize(raw, TARGET_SIZE, interpolation=cv2.INTER_LANCZOS4)
-        sharp_b  = sharpness(raw_at_target)
-        sharp_a  = sharpness(enhanced)
-        ssim_g   = ssim_score(raw_at_target, enhanced)
+        sharp_b = sharpness(raw_at_target)
+        sharp_a = sharpness(enhanced)
+        ssim_g  = ssim_score(raw_at_target, enhanced)
 
-        # Face recognition — whole-crop encoding (no detection needed)
+        # Face encoding
         enc_raw = get_face_encoding(raw_at_target)
         enc_enh = get_face_encoding(enhanced)
 
@@ -447,18 +467,20 @@ if __name__ == "__main__":
         match_a = False
         mid     = None
 
-        if refs_list:
-            if enc_raw is not None:
-                dists_b = fr.face_distance(refs_list, enc_raw)
-                best_b = int(np.argmin(dists_b))
-                if dists_b[best_b] <= 0.60:
-                    match_b = True
-            if enc_enh is not None:
-                dists_a = fr.face_distance(refs_list, enc_enh)
-                best_a = int(np.argmin(dists_a))
-                if dists_a[best_a] <= 0.60:
-                    match_a = True
-                    mid = refs_names[best_a]
+        # BEFORE: raw crop encoding vs RAW reference encodings (natural domain)
+        if raw_refs_list and enc_raw is not None:
+            dists = fr.face_distance(raw_refs_list, enc_raw)
+            best = int(np.argmin(dists))
+            if dists[best] <= 0.60:
+                match_b = True
+
+        # AFTER: enhanced crop encoding vs ENHANCED reference encodings (enhanced domain)
+        if enh_refs_list and enc_enh is not None:
+            dists = fr.face_distance(enh_refs_list, enc_enh)
+            best = int(np.argmin(dists))
+            if dists[best] <= 0.60:
+                match_a = True
+                mid = enh_refs_names[best]
 
         # Encode for report
         _, rb = cv2.imencode(".jpg", raw_at_target, [cv2.IMWRITE_JPEG_QUALITY, 82])
