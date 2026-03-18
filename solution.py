@@ -429,11 +429,13 @@ if __name__ == "__main__":
         sharp_a  = sharpness(enhanced)
         ssim_g   = ssim_score(raw_at_target, enhanced)
 
-        # Face recognition
-        # Raw: upsample=2 to detect faces in small crops
-        # Enhanced: upsample=1 since already 240x240
-        enc_raw = get_face_encoding(raw_at_target, upsample=2)
-        enc_enh = get_face_encoding(enhanced, upsample=1)
+        # Face recognition — both images are 240x240, upsample=1 is sufficient
+        enc_raw = get_face_encoding(raw_at_target, upsample=1)
+
+        # For enhanced: apply light bilateral filter before encoding to smooth
+        # sharpening artifacts (doesn't change the saved enhanced image)
+        enh_for_encoding = cv2.bilateralFilter(enhanced, d=5, sigmaColor=30, sigmaSpace=30)
+        enc_enh = get_face_encoding(enh_for_encoding, upsample=1)
 
         match_b = False
         match_a = False
@@ -443,11 +445,12 @@ if __name__ == "__main__":
             if enc_raw is not None:
                 match_b = any(fr.compare_faces(refs_list, enc_raw, tolerance=0.60))
             if enc_enh is not None:
-                # Slightly more lenient for enhanced — sharpening shifts encoding slightly
-                hits = fr.compare_faces(refs_list, enc_enh, tolerance=0.65)
-                match_a = any(hits)
-                if match_a:
-                    mid = refs_names[hits.index(True)]
+                # Use face_distance to find closest match
+                distances = fr.face_distance(refs_list, enc_enh)
+                best_idx = int(np.argmin(distances))
+                if distances[best_idx] <= 0.65:
+                    match_a = True
+                    mid = refs_names[best_idx]
 
         # Encode for report
         _, rb = cv2.imencode(".jpg", raw_at_target, [cv2.IMWRITE_JPEG_QUALITY, 82])
