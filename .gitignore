@@ -1,0 +1,10 @@
+Video_1/
+Profiles_1/
+raw_faces/
+enhanced_faces/
+__pycache__/
+*.pyc
+venv/
+.env
+enhancement_report.html
+evaluation_metrics.json
