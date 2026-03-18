@@ -19,9 +19,7 @@ MIN_FACE_SIZE = 12
 # Maximum faces to extract (assignment says ~100)
 MAX_FACES = 100
 # Padding around detected face (fraction of face size)
-# Minimal padding to keep crops small (50-80px) — the enhancement pipeline
-# is designed for tiny 12-80px CCTV face crops
-PADDING = 0.05
+PADDING = 0.3
 
 def extract_faces_from_video(video_path, start_count=0):
     """Extract face crops from a single video file."""

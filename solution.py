@@ -36,9 +36,20 @@ SHARP_SKIP_THRESHOLD = 80.0
 
 def stage1_denoise(img: np.ndarray) -> np.ndarray:
     """
-    cv2.fastNlMeansDenoisingColored with h=8, hColor=8, templateWindowSize=7, searchWindowSize=21
+    cv2.fastNlMeansDenoisingColored — adaptive h based on image size.
+    Tiny noisy crops get full h=8. Larger crops get lighter denoising.
     """
-    return cv2.fastNlMeansDenoisingColored(img, None, h=8, hColor=8,
+    h_img, w_img = img.shape[:2]
+    short_side = min(h_img, w_img)
+
+    if short_side < 64:
+        h_val, hc_val = 8, 8
+    elif short_side < 100:
+        h_val, hc_val = 5, 5
+    else:
+        h_val, hc_val = 3, 3
+
+    return cv2.fastNlMeansDenoisingColored(img, None, h=h_val, hColor=hc_val,
                                            templateWindowSize=7, searchWindowSize=21)
 
 
@@ -408,12 +419,8 @@ if __name__ == "__main__":
         sharp_a = sharpness(enhanced)
         ssim_g  = ssim_score(raw_at_target, enhanced)
 
-        # Face recognition
-        # Before: encode the ORIGINAL small crop (real CCTV baseline)
-        # upsample=2 to help detect faces in tiny crops
-        enc_raw = get_face_encoding(raw, upsample=2)
-        # After: encode the enhanced 240x240 image
-        # upsample=1 sufficient at 240x240
+        # Face recognition — both at 240x240, upsample=1
+        enc_raw = get_face_encoding(raw_at_target, upsample=1)
         enc_enh = get_face_encoding(enhanced, upsample=1)
 
         match_b = False
@@ -421,8 +428,10 @@ if __name__ == "__main__":
         mid     = None
 
         if refs_list:
+            # Before: stricter threshold (raw crops have noise, reduce false positives)
             if enc_raw is not None:
-                match_b = any(fr.compare_faces(refs_list, enc_raw, tolerance=0.60))
+                match_b = any(fr.compare_faces(refs_list, enc_raw, tolerance=0.55))
+            # After: standard threshold
             if enc_enh is not None:
                 hits = fr.compare_faces(refs_list, enc_enh, tolerance=0.60)
                 match_a = any(hits)
