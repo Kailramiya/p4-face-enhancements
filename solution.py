@@ -428,11 +428,11 @@ if __name__ == "__main__":
         sharp_a  = sharpness(enhanced)
         ssim_g   = ssim_score(raw_at_target, enhanced)
 
-        # Face recognition
-        # "Before": encode the ORIGINAL tiny crop (real baseline — how well
-        # does recognition work on the raw CCTV crop before any enhancement?)
-        enc_raw = get_face_encoding(raw, upsample=2)
-        # "After": encode the enhanced 240x240 image
+        # Face recognition — same settings for both (fair comparison)
+        # Before: original tiny crop (real CCTV baseline)
+        # After: enhanced 240x240
+        # Both use upsample=1 — tests if enhancement helps basic detection
+        enc_raw = get_face_encoding(raw, upsample=1)
         enc_enh = get_face_encoding(enhanced, upsample=1)
 
         match_b = False
@@ -441,13 +441,16 @@ if __name__ == "__main__":
 
         if refs_list:
             if enc_raw is not None:
-                match_b = any(fr.compare_faces(refs_list, enc_raw, tolerance=0.60))
+                dists_b = fr.face_distance(refs_list, enc_raw)
+                best_b = int(np.argmin(dists_b))
+                if dists_b[best_b] <= 0.60:
+                    match_b = True
             if enc_enh is not None:
-                distances = fr.face_distance(refs_list, enc_enh)
-                best_idx = int(np.argmin(distances))
-                if distances[best_idx] <= 0.60:
+                dists_a = fr.face_distance(refs_list, enc_enh)
+                best_a = int(np.argmin(dists_a))
+                if dists_a[best_a] <= 0.60:
                     match_a = True
-                    mid = refs_names[best_idx]
+                    mid = refs_names[best_a]
 
         # Encode for report
         _, rb = cv2.imencode(".jpg", raw_at_target, [cv2.IMWRITE_JPEG_QUALITY, 82])
