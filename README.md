@@ -100,3 +100,4 @@ Push to your branch only. Do not touch main.
 Skip enhancement if Laplacian variance of the input is already above 80 — just resize. This saves time on inputs that are already sharp enough.
 
 *Sentio Mind · 2026*
+# test
