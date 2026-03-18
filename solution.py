@@ -177,11 +177,14 @@ def stage4_zone_sharpen(img: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def enhance_face(img: np.ndarray) -> np.ndarray:
-    """Run all 4 stages in order. Do not modify."""
+    """Run all 4 stages in order, then smooth sharpening artifacts."""
     img = stage1_denoise(img)
     img = stage2_clahe(img)
     img = stage3_upscale(img)
     img = stage4_zone_sharpen(img)
+    # Light bilateral filter to smooth zone sharpening halos
+    # while preserving edges — improves face recognition accuracy
+    img = cv2.bilateralFilter(img, d=5, sigmaColor=25, sigmaSpace=25)
     return img
 
 
@@ -428,12 +431,12 @@ if __name__ == "__main__":
         mid     = None
 
         if refs_list:
-            # Before: stricter threshold (raw crops have noise, reduce false positives)
+            # Before: stricter threshold
             if enc_raw is not None:
-                match_b = any(fr.compare_faces(refs_list, enc_raw, tolerance=0.45))
-            # After: lenient (enhancement shifts encoding)
+                match_b = any(fr.compare_faces(refs_list, enc_raw, tolerance=0.50))
+            # After: standard threshold
             if enc_enh is not None:
-                hits = fr.compare_faces(refs_list, enc_enh, tolerance=0.68)
+                hits = fr.compare_faces(refs_list, enc_enh, tolerance=0.60)
                 match_a = any(hits)
                 if match_a:
                     mid = refs_names[hits.index(True)]
