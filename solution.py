@@ -203,10 +203,21 @@ def sharpness(img: np.ndarray) -> float:
 def get_face_encoding(img: np.ndarray, upsample: int = 1):
     """
     128-d face encoding. Return numpy array if face found, else None.
-    upsample=1 for 240x240 images, upsample=2 for small raw crops.
+    First tries treating the whole crop as a face (faster, works for face crops).
+    Falls back to face detection if that fails.
     """
     import face_recognition as fr
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    h, w = rgb.shape[:2]
+
+    # These are known face crops — encode the whole image as a face
+    # (top, right, bottom, left) format for face_recognition
+    full_face_loc = [(0, w, h, 0)]
+    encodings = fr.face_encodings(rgb, known_face_locations=full_face_loc)
+    if encodings:
+        return encodings[0]
+
+    # Fallback: auto-detect face location
     locations = fr.face_locations(rgb, number_of_times_to_upsample=upsample)
     if not locations:
         return None
@@ -428,12 +439,9 @@ if __name__ == "__main__":
         sharp_a  = sharpness(enhanced)
         ssim_g   = ssim_score(raw_at_target, enhanced)
 
-        # Face recognition — same settings for both (fair comparison)
-        # Before: original tiny crop (real CCTV baseline)
-        # After: enhanced 240x240
-        # Both use upsample=1 — tests if enhancement helps basic detection
-        enc_raw = get_face_encoding(raw, upsample=1)
-        enc_enh = get_face_encoding(enhanced, upsample=1)
+        # Face recognition — whole-crop encoding (no detection needed)
+        enc_raw = get_face_encoding(raw_at_target)
+        enc_enh = get_face_encoding(enhanced)
 
         match_b = False
         match_a = False
