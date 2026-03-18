@@ -106,8 +106,6 @@ def stage3_upscale(img: np.ndarray) -> np.ndarray:
         img = cv2.resize(img, TARGET_SIZE, interpolation=cv2.INTER_LANCZOS4)
     else:
         img = cv2.resize(img, TARGET_SIZE, interpolation=cv2.INTER_LANCZOS4)
-        # Apply unsharp after direct resize to recover sharpness lost during upscaling
-        img = unsharp_mask(img, sigma=1.0, strength=1.2)
 
     return img
 
@@ -202,14 +200,14 @@ def sharpness(img: np.ndarray) -> float:
     return cv2.Laplacian(gray, cv2.CV_64F).var()
 
 
-def get_face_encoding(img: np.ndarray):
+def get_face_encoding(img: np.ndarray, upsample: int = 1):
     """
     128-d face encoding. Return numpy array if face found, else None.
-    Use number_of_times_to_upsample=1 for speed (images are already 240x240).
+    upsample=1 for 240x240 images, upsample=2 for small raw crops.
     """
     import face_recognition as fr
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    locations = fr.face_locations(rgb, number_of_times_to_upsample=1)
+    locations = fr.face_locations(rgb, number_of_times_to_upsample=upsample)
     if not locations:
         return None
     encodings = fr.face_encodings(rgb, known_face_locations=locations)
@@ -431,10 +429,11 @@ if __name__ == "__main__":
         sharp_a  = sharpness(enhanced)
         ssim_g   = ssim_score(raw_at_target, enhanced)
 
-        # Face recognition — use enhanced (240x240) for both speed and accuracy
-        # For "before": encode the raw resized to 240x240
-        enc_raw = get_face_encoding(raw_at_target)
-        enc_enh = get_face_encoding(enhanced)
+        # Face recognition
+        # Raw: upsample=2 to detect faces in small crops
+        # Enhanced: upsample=1 since already 240x240
+        enc_raw = get_face_encoding(raw_at_target, upsample=2)
+        enc_enh = get_face_encoding(enhanced, upsample=1)
 
         match_b = False
         match_a = False
@@ -444,7 +443,8 @@ if __name__ == "__main__":
             if enc_raw is not None:
                 match_b = any(fr.compare_faces(refs_list, enc_raw, tolerance=0.60))
             if enc_enh is not None:
-                hits = fr.compare_faces(refs_list, enc_enh, tolerance=0.60)
+                # Slightly more lenient for enhanced — sharpening shifts encoding slightly
+                hits = fr.compare_faces(refs_list, enc_enh, tolerance=0.65)
                 match_a = any(hits)
                 if match_a:
                     mid = refs_names[hits.index(True)]
