@@ -177,14 +177,11 @@ def stage4_zone_sharpen(img: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def enhance_face(img: np.ndarray) -> np.ndarray:
-    """Run all 4 stages in order, then smooth sharpening artifacts."""
+    """Run all 4 stages in order. Do not modify."""
     img = stage1_denoise(img)
     img = stage2_clahe(img)
     img = stage3_upscale(img)
     img = stage4_zone_sharpen(img)
-    # Light bilateral filter to smooth zone sharpening halos
-    # while preserving edges — improves face recognition accuracy
-    img = cv2.bilateralFilter(img, d=5, sigmaColor=25, sigmaSpace=25)
     return img
 
 
@@ -422,9 +419,9 @@ if __name__ == "__main__":
         sharp_a = sharpness(enhanced)
         ssim_g  = ssim_score(raw_at_target, enhanced)
 
-        # Face recognition — both at 240x240, upsample=1
+        # Face recognition
         enc_raw = get_face_encoding(raw_at_target, upsample=1)
-        enc_enh = get_face_encoding(enhanced, upsample=1)
+        enc_enh = get_face_encoding(enhanced, upsample=2)
 
         match_b = False
         match_a = False
