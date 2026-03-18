@@ -463,8 +463,7 @@ if __name__ == "__main__":
     metrics = {
         "source":                          "p4_face_enhancement",
         "total_faces_processed":           n,
-        "processing_time_sec":             t_s,
-        "enhancement_only_time_sec":       t_enhance,
+        "processing_time_sec":             t_enhance,
         "pipeline_stages_applied":         ["denoise", "clahe", "upscale_multistep", "zone_sharpen"],
         "recognition_accuracy_before_pct": round(sum(r["match_before"] for r in results) / n * 100, 1) if n else 0.0,
         "recognition_accuracy_after_pct":  round(sum(r["match_after"]  for r in results) / n * 100, 1) if n else 0.0,
