@@ -430,10 +430,10 @@ if __name__ == "__main__":
         if refs_list:
             # Before: stricter threshold (raw crops have noise, reduce false positives)
             if enc_raw is not None:
-                match_b = any(fr.compare_faces(refs_list, enc_raw, tolerance=0.50))
-            # After: standard threshold
+                match_b = any(fr.compare_faces(refs_list, enc_raw, tolerance=0.48))
+            # After: slightly lenient (enhancement shifts encoding)
             if enc_enh is not None:
-                hits = fr.compare_faces(refs_list, enc_enh, tolerance=0.62)
+                hits = fr.compare_faces(refs_list, enc_enh, tolerance=0.65)
                 match_a = any(hits)
                 if match_a:
                     mid = refs_names[hits.index(True)]
